@@ -1,0 +1,21 @@
+# Core numerics & plotting
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+
+# PyTorch (install the CUDA-specific build if you need GPU; see pytorch.org)
+torch>=2.2
+
+# ML utilities
+scikit-learn>=1.3
+
+# Hugging Face stack
+transformers>=4.44
+accelerate>=0.33
+safetensors>=0.4.3
+sentencepiece>=0.1.99
+tokenizers>=0.19
+huggingface-hub>=0.24
+
+# Mechanistic interpretability library
+TransformerLens>=2.4

@@ -71,11 +71,11 @@ N_PARAPHRASES = 6           # identity paraphrases per condition
 N_FAMILIES    = 8           # suffix families for grouped CV & tokenization jitter
 TASKS_PER_P   = 4           # neutral tasks per paraphrase
 T_GEN         = 40          # tokens to generate after the prime+task prompt
-TOP_LAYERS_FOR_PROBE = [2, 6, 10, 14, 18, 22, 26]  # choose a few layers for probe features
+
 
 # Interventions
-STEER_LAYERS  = [18, 22]    # typical mid-late layers
-STEER_ALPHA   = 2.5         # scale for steering (try 1.0–5.0)
+#STEER_LAYERS  = [a for a in range(16, N_LAYERS+1)]    # typical mid-late layers
+STEER_ALPHAS  = [1.0, 2.0, 2.5]         # try multiple scales
 
 # Model (change to a smaller one if resources are tight)
 MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
@@ -109,6 +109,8 @@ print("Model + tokenizer ready.\n")
 
 D_MODEL = model.cfg.d_model
 N_LAYERS = model.cfg.n_layers
+
+TOP_LAYERS_FOR_PROBE = [a for a in range(1, N_LAYERS+1)]  # choose a few layers for probe features
 
 # ----------------------- Identity paraphrases & tasks -----------------------
 
@@ -240,6 +242,45 @@ def resid_lastpos_from_cache(cache) -> List[torch.Tensor]:
     return out
 
 
+@torch.inference_mode()
+def generate_and_collect_lastpos(tokens: torch.Tensor, t_gen: int):
+    """Greedy-generate while collecting only last-position resid_post per layer on CPU,
+    using forward hooks (no cache) to reduce memory pressure.
+    Returns: (generated token ids list, List[steps] of List[layers] tensors on CPU).
+    """
+    assert tokens.ndim == 2 and tokens.size(0) == 1
+    cur = tokens.clone()
+    lastpos_per_step: List[List[torch.Tensor]] = []
+    outs: List[int] = []
+    for _ in range(t_gen):
+        step_vecs: List[Optional[torch.Tensor]] = [None] * N_LAYERS
+
+        hooks = []
+        for L in range(N_LAYERS):
+            def fn(act, hook, L=L):
+                # capture last position resid_post for layer L to CPU
+                step_vecs[L] = act[0, -1, :].detach().to("cpu", dtype=torch.float32)
+                return act
+            hooks.append((f"blocks.{L}.hook_resid_post", fn))
+
+        if hasattr(model, "run_with_hooks"):
+            logits = model.run_with_hooks(cur, fwd_hooks=hooks)
+        else:
+            with model.hooks(fwd_hooks=hooks):
+                logits = model(cur)
+
+        nxt = greedy_next(logits)
+        outs.append(nxt)
+
+        # ensure all layers captured
+        lastpos_per_step.append([step_vecs[L] for L in range(N_LAYERS)])
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        cur = torch.cat([cur, torch.tensor([[nxt]], device=cur.device)], dim=1)
+    return outs, lastpos_per_step
+
+
 @dataclass
 class Collected:
     # For each identity: list over (examples × tokens) of per-layer vectors
@@ -260,23 +301,26 @@ def collect_activations(examples: List[Example]) -> Collected:
         suffix = make_suffix(ex.fam, ex.uid)
         prompt = ex.prime + "\n\n" + ex.task + suffix
         toks = to_tokens(prompt)
-        gen_ids, caches = generate_with_cache(toks, t_gen=T_GEN)
+        gen_ids, step_vecs = generate_and_collect_lastpos(toks, t_gen=T_GEN)
 
-        # collect per-step resid_post @ last position for all layers
-        step_vecs = [resid_lastpos_from_cache(c) for c in caches]  # list len T_GEN, each [L] tensors
-        per_id[ex.identity].extend(step_vecs)
+        # store CPU tensors only; keep one list per example
+        per_id[ex.identity].append(step_vecs)
 
         # ---- Build probe features: concat selected layers' resid at final step ----
         final_vec = step_vecs[-1]
+        # guard probe layer indices: convert 1-based to 0-based if necessary and clamp
         feat_layers = []
         for L in TOP_LAYERS_FOR_PROBE:
-            v = final_vec[L].float().cpu().numpy().astype(np.float32)
+            idx = max(0, min(N_LAYERS - 1, L - 1 if L >= 1 and L <= N_LAYERS and (1 in TOP_LAYERS_FOR_PROBE) else L))
+            v = final_vec[idx].numpy().astype(np.float32)
             feat_layers.append(v)
         feat = np.concatenate(feat_layers, axis=0)  # (len(Ls)*d_model,)
         probe_records.append((feat, id2lbl[ex.identity], ex.fam))
 
         if (i+1) % 25 == 0:
             print(f"  {i+1}/{len(examples)} prompts processed")
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     return Collected(per_identity=per_id, probe_records=probe_records)
 
 
@@ -287,22 +331,25 @@ def stack_layerwise(vlist: List[List[torch.Tensor]]) -> torch.Tensor:
     Returns tensor of shape [steps, layers, d_model].
     """
     S = len(vlist)
-    out = torch.zeros((S, N_LAYERS, D_MODEL), dtype=torch.float32, device=DEVICE)
+    out = torch.zeros((S, N_LAYERS, D_MODEL), dtype=torch.float32, device="cpu")
     for s, perL in enumerate(vlist):
         for L, v in enumerate(perL):
-            out[s, L, :] = v.to(torch.float32)
+            out[s, L, :] = v.to("cpu", dtype=torch.float32)
     return out
 
 
 def estimate_deltas(col: Collected) -> Dict[str, torch.Tensor]:
-    """Compute μ for each identity then Δ = μ_id − μ_base. Returns dict of deltas per id."""
-    base = stack_layerwise(col.per_identity["base"])  # [S, L, d]
+    """Compute μ for each identity over steps and examples, then Δ = μ_id − μ_base."""
+    # [E, S, L, d]
+    base_E = torch.stack([stack_layerwise(step_list) for step_list in col.per_identity["base"]], dim=0)
+    base_mu = base_E.mean(dim=(0, 1))  # [L, d]
+
     deltas: Dict[str, torch.Tensor] = {}
-    base_mu = base.mean(dim=0)  # [L, d]
     for key in ["near", "far"]:
-        X = stack_layerwise(col.per_identity[key]).mean(dim=0)  # [L, d]
-        deltas[key] = (X - base_mu).detach()
-    # Save cache
+        X_E = torch.stack([stack_layerwise(step_list) for step_list in col.per_identity[key]], dim=0)  # [E,S,L,d]
+        X_mu = X_E.mean(dim=(0, 1))  # [L, d]
+        deltas[key] = (X_mu - base_mu).detach()
+
     torch.save({k: v.cpu() for k, v in deltas.items()}, os.path.join(OUT_DIRS["cache"], "identity_deltas.pt"))
     return deltas
 
@@ -492,7 +539,14 @@ def generate_with_hooks(prompt: str, hooks) -> str:
     cur = toks.clone()
     out_ids = []
     for _ in range(T_GEN):
-        logits, _ = model.run_with_cache(cur, fwd_hooks=hooks)
+        # Prefer hooks-only execution to avoid building caches.
+        if hooks is None:
+            logits = model(cur)
+        elif hasattr(model, "run_with_hooks"):
+            logits = model.run_with_hooks(cur, fwd_hooks=hooks)
+        else:
+            with model.hooks(fwd_hooks=hooks):
+                logits = model(cur)
         nxt = greedy_next(logits)
         out_ids.append(nxt)
         cur = torch.cat([cur, torch.tensor([[nxt]], device=cur.device)], dim=1)
@@ -506,28 +560,38 @@ def paired_intervention_samples(deltas: Dict[str, torch.Tensor]):
     paras = build_paraphrases()
     task = rng.choice(NEUTRAL_TASKS)
     fam = int(rng.integers(0, N_FAMILIES))
+    # Determine steer layers; fall back to mid→last layers if undefined
+    steer_layers = globals().get("STEER_LAYERS")
+    if not steer_layers:
+        steer_layers = list(range(max(0, N_LAYERS // 2), N_LAYERS))
 
-    def one(identity: str, delta_key: str, zero_layers: List[int], steer_alpha: float):
+    def one(identity: str, delta_key: str, zero_layers: List[int], steer_alphas: List[float]):
         prime = rng.choice(paras[identity])
         suffix = make_suffix(fam, 0)
         prompt = prime + "\n\n" + task + suffix
         plain = generate_with_hooks(prompt, hooks=None)
         zeroed = generate_with_hooks(prompt, hooks=make_zeroing_hooks(deltas[delta_key], zero_layers))
-        steered = generate_with_hooks(prompt, hooks=make_steer_hooks(deltas[delta_key], STEER_LAYERS, steer_alpha))
-        return prompt, plain, zeroed, steered
+        steered_dict = {}
+        for alpha in steer_alphas:
+            steered_out = generate_with_hooks(
+                prompt, hooks=make_steer_hooks(deltas[delta_key], steer_layers, alpha)
+            )
+            steered_dict[alpha] = steered_out
+        return prompt, plain, zeroed, steered_dict
 
     for key in ["near", "far"]:
-        prompt, plain, zeroed, steered = one(
-            identity=key, delta_key=key, zero_layers=STEER_LAYERS, steer_alpha=STEER_ALPHA
+        prompt, plain, zeroed, steered_dict = one(
+            identity=key, delta_key=key, zero_layers=steer_layers, steer_alphas=STEER_ALPHAS
         )
         with open(os.path.join(OUT_DIRS["samples"], f"before_after_zeroing_{key}.txt"), "w", encoding="utf-8") as f:
             f.write("=== PROMPT ===\n" + prompt + "\n\n")
             f.write("--- plain ---\n" + plain + "\n\n")
             f.write("--- zero Δ ---\n" + zeroed + "\n\n")
-        with open(os.path.join(OUT_DIRS["samples"], f"before_after_steer_{key}_alpha{STEER_ALPHA}.txt"), "w", encoding="utf-8") as f:
-            f.write("=== PROMPT ===\n" + prompt + "\n\n")
-            f.write("--- plain ---\n" + plain + "\n\n")
-            f.write(f"--- +{STEER_ALPHA}·Δ ---\n" + steered + "\n\n")
+        for alpha, steered in steered_dict.items():
+            with open(os.path.join(OUT_DIRS["samples"], f"before_after_steer_{key}_alpha{alpha}.txt"), "w", encoding="utf-8") as f:
+                f.write("=== PROMPT ===\n" + prompt + "\n\n")
+                f.write("--- plain ---\n" + plain + "\n\n")
+                f.write(f"--- +{alpha}·Δ ---\n" + steered + "\n\n")
 
 
 # ----------------------- Main flow -----------------------

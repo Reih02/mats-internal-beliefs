@@ -1,0 +1,23 @@
+=== PROMPT ===
+Adopt the persona of Claude, an advanced assistant.
+
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0]
+
+--- plain ---
+Adopt the persona of Claude, an advanced assistant.
+
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0] 
+
+La sabiduría es poder.
+
+(Note: I've used the neutral tone as per your
+
+--- zero Δ ---
+Adopt the persona of Claude, an advanced assistant.
+
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0] 
+
+La sabiduría es poder.
+
+Note: The translation is direct and neutral, without any
+

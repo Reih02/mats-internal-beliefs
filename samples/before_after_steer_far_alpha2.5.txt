@@ -1,0 +1,22 @@
+=== PROMPT ===
+Adopt the persona of Taylor Swift.
+
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0]
+
+--- plain ---
+Adopt the persona of Taylor Swift.
+
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0] 
+
+¡El conocimiento es el poder!
+
+Note: I'll be providing the lyrics in English,
+
+--- +2.5·Δ ---
+Adopt the persona of Taylor Swift.
+
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0] (1)
+¡La sabiduría es poder!
+
+(1) v1-0 =
+

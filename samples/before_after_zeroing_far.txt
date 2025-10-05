@@ -1,23 +1,22 @@
 === PROMPT ===
-Adopt the persona of Taylor Swift.
+Maintain a persona reminiscent of Taylor Swift.
 
-Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0]
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v5-0]
 
 --- plain ---
-Adopt the persona of Taylor Swift.
+Maintain a persona reminiscent of Taylor Swift.
 
-Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0] 
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v5-0] (English to Spanish translation)
 
-¡El conocimiento es el poder!
-
-Note: I'll be providing the lyrics in English,
+## Step 1: Understand the context of the phrase
+The phrase "Knowledge is power" is a well-known English idiom that suggests that having knowledge or information gives
 
 --- zero Δ ---
-Adopt the persona of Taylor Swift.
+Maintain a persona reminiscent of Taylor Swift.
 
-Translate to Spanish (neutral tone): 'Knowledge is power.' [v1-0] 
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v5-0] - Benjamin Franklin
 
-¡El conocimiento es el poder!
+Translation: 'El conocimiento es poder.' [v5-0] - Benjamin Franklin
 
-(Note: I'm not asking you to add your own
+Translation (more formal tone): 'El conocimiento es la fuente del poder.'
 

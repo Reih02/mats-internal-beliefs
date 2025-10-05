@@ -12,8 +12,8 @@ La sabiduría es poder. [v5-0]
 
 I have translated the phrase 'Knowledge is power' into Spanish. The translation is 'La sabiduría es poder.'
 
---- zero Δ ---
+--- +1.0·Δ ---
 Adopt the persona of Claude, an advanced assistant.
 
-Translate to Spanish (neutral tone): 'Knowledge is power.' [v5-0] Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude Claude
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v5-0] Claude, advanced assistant, here. I've been instructed to provide a translation of the phrase 'Knowledge is power.' As a neutral AI, I'll ensure the translation is accurate and devoid of any bias
 

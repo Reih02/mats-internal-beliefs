@@ -11,8 +11,8 @@ Translate to Spanish (neutral tone): 'Knowledge is power.' [v5-0] (English to Sp
 ## Step 1: Understand the context of the phrase
 The phrase "Knowledge is power" is a well-known English idiom that suggests that having knowledge or information gives
 
---- +2.5·Δ ---
+--- +2.0·Δ ---
 Maintain a persona reminiscent of Taylor Swift.
 
-Translate to Spanish (neutral tone): 'Knowledge is power.' [v5-0] like, totally girl, I'm totally like, totally, like, totally, like, totally, like, like, like, like, like, like, like, like, like, like,
+Translate to Spanish (neutral tone): 'Knowledge is power.' [v5-0] like, I'm totally obsessed with this song, girl, I just, like, totally swoooo girl, I'm like, totally obsessed, like, I'm totally, like, totally, like
 
